@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>老闆專用後台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid #f97316; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .btn-press:active { transform: scale(0.95); }
+        .transition-all-300 { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .body-lock { overflow: hidden; height: 100vh; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 pb-24">
+
+    <!-- ★★★ 設定區 ★★★ -->
+    <script>
+        // ★★★ 請確認這是你最新的 GAS 網址 ★★★
+        const API_URL = "https://script.google.com/macros/s/AKfycbxDuB1TUQmovg_zMtrrRx_2Mbmb0SC_ScpzQ617qg54SCAwzYi3p4vBJWlg2lZfmg1l/exec";
+        
+        // GitHub Token 設定 (圖片上傳用)
+        const GITHUB_USERNAME = "jiachingdu";    
+        const REPO_NAME = "shanceng";            
+        const SESSION_DURATION = 90 * 60 * 1000; // 90分鐘免重登
+    </script>
+
+    <!-- 登入遮罩 -->
+    <div id="login-overlay" class="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center">
+            <div class="w-16 h-16 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-6 text-2xl"><i class="fas fa-user-shield"></i></div>
+            <h2 class="text-2xl font-bold mb-2 text-gray-800">山層食研所後台</h2>
+            <p class="text-gray-400 text-sm mb-6">請輸入管理密碼以繼續</p>
+            <div class="relative mb-4">
+                <input type="password" id="password-input" class="w-full pl-4 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all text-center text-lg tracking-widest" placeholder="••••" autocomplete="off">
+            </div>
+            <button onclick="tryLogin()" id="login-btn" class="w-full bg-gray-900 text-white py-3 rounded-xl font-bold shadow-lg btn-press transition-all">進入後台</button>
+        </div>
+    </div>
+
+    <!-- 主介面 -->
+    <div id="main-app" class="hidden min-h-screen">
+        <header class="bg-white sticky top-0 z-40 shadow-sm h-16 flex items-center justify-between px-4">
+            <h1 class="text-xl font-bold text-gray-800 flex items-center"><i class="fas fa-store text-orange-500 mr-2"></i>山層食研所訂單系統</h1>
+            <button onclick="logout()" class="text-sm text-gray-400 hover:text-gray-600 font-medium bg-gray-100 px-3 py-1.5 rounded-lg transition-colors">登出</button>
+        </header>
+
+        <main class="max-w-md mx-auto px-4 pt-4 pb-24">
+            
+            <!-- 1. 訂單管理區 -->
+            <div id="page-orders" class="space-y-4">
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="far fa-calendar-alt mr-2 text-orange-500"></i>訂單日期</h2>
+                        <div class="flex space-x-2">
+                            <button onclick="setDateFilter('today')" class="text-xs bg-orange-50 text-orange-600 px-3 py-1 rounded-full font-bold hover:bg-orange-100 transition-colors">今日</button>
+                            <button onclick="setDateFilter('yesterday')" class="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full font-bold hover:bg-gray-200 transition-colors">昨日</button>
+                        </div>
+                    </div>
+                    <input type="date" id="date-filter" class="w-full border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:ring-2 focus:ring-orange-500 outline-none" onchange="fetchOrders()">
+                    <div class="flex items-center justify-between pt-1 border-t border-gray-50 mt-2">
+                        <label class="flex items-center space-x-2 text-sm text-gray-500 cursor-pointer select-none">
+                            <input type="checkbox" id="show-history" class="w-4 h-4 text-orange-500 rounded focus:ring-orange-500" onchange="fetchOrders()">
+                            <span>顯示已結單/已取消</span>
+                        </label>
+                        <button onclick="fetchOrders()" class="text-blue-500 text-sm font-bold flex items-center"><i class="fas fa-sync-alt mr-1"></i>重整</button>
+                    </div>
+                </div>
+                <div id="orders-list" class="space-y-4"><div class="text-center py-20 text-gray-400"><div class="loader mx-auto mb-2"></div>讀取中...</div></div>
+            </div>
+
+            <!-- 2. 帳務統計區 -->
+            <div id="page-stats" class="space-y-4 hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">營業額統計</h2>
+                <div class="grid grid-cols-2 gap-3" id="stats-grid">
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-orange-100">
+                        <div class="text-xs text-gray-500 mb-1">今日營收</div>
+                        <div class="text-2xl font-bold text-orange-600" id="stat-today">$...</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">昨日營收</div>
+                        <div class="text-2xl font-bold text-gray-700" id="stat-yesterday">$...</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">本週 (一~日)</div>
+                        <div class="text-xl font-bold text-gray-800" id="stat-thisWeek">$...</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">上週</div>
+                        <div class="text-xl font-bold text-gray-600" id="stat-lastWeek">$...</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">本月</div>
+                        <div class="text-xl font-bold text-blue-600" id="stat-thisMonth">$...</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">上月</div>
+                        <div class="text-xl font-bold text-gray-600" id="stat-lastMonth">$...</div>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mt-4">
+                    <h3 class="font-bold text-gray-800 mb-3 flex items-center"><i class="fas fa-search-dollar mr-2 text-orange-500"></i>區間查詢</h3>
+                    <div class="flex space-x-2 mb-3">
+                        <input type="date" id="stat-start" class="w-1/2 border p-2 rounded-lg bg-gray-50 text-sm">
+                        <input type="date" id="stat-end" class="w-1/2 border p-2 rounded-lg bg-gray-50 text-sm">
+                    </div>
+                    <button onclick="fetchCustomStats()" id="btn-stat-search" class="w-full bg-gray-900 text-white py-2 rounded-xl font-bold shadow mb-3 btn-press transition-all">查詢</button>
+                    <div class="text-center">
+                        <div class="text-xs text-gray-400">區間總營業額</div>
+                        <div class="text-3xl font-bold text-orange-500 mt-1" id="stat-custom">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 菜單管理區 -->
+            <div id="page-menu" class="space-y-4 hidden">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-2xl font-bold text-gray-800">菜單設定</h2>
+                    <button onclick="openEditModal('add')" class="w-10 h-10 bg-gray-900 text-white rounded-full shadow-lg flex items-center justify-center btn-press"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="menu-list" class="space-y-3"><div class="text-center py-20 text-gray-400"><div class="loader mx-auto mb-2"></div>讀取中...</div></div>
+            </div>
+
+            <!-- 4. 商店設定區 (營業時間+跑馬燈) -->
+            <div id="page-settings" class="space-y-6 hidden">
+                <!-- 營業時間 -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center"><i class="fas fa-clock text-orange-500 mr-2"></i>營業時間設定</h2>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="text-xs text-gray-500 font-bold block mb-1">開始營業 (時)</label>
+                            <select id="set-open-hour" class="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-lg"></select>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500 font-bold block mb-1">結束營業 (時)</label>
+                            <select id="set-close-hour" class="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-lg"></select>
+                        </div>
+                    </div>
+                    <button onclick="saveTimeSettings()" id="btn-save-time" class="w-full bg-gray-900 text-white py-3 rounded-xl font-bold shadow btn-press">儲存時間設定</button>
+                </div>
+
+                <!-- 跑馬燈 -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fas fa-bullhorn text-orange-500 mr-2"></i>跑馬燈公告</h2>
+                        <button onclick="openMarqueeModal('add')" class="text-sm bg-orange-100 text-orange-600 px-3 py-1 rounded-lg font-bold hover:bg-orange-200"><i class="fas fa-plus mr-1"></i>新增</button>
+                    </div>
+                    <div id="marquee-list" class="space-y-3"><div class="text-center py-10 text-gray-400">讀取中...</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部導航列 -->
+        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 pb-safe pt-2 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40 flex justify-between h-16 items-start max-w-md mx-auto">
+            <button onclick="switchTab('orders')" id="tab-orders" class="flex flex-col items-center space-y-1 w-10 text-orange-500 transition-colors duration-300"><i class="fas fa-clipboard-list text-xl mb-0.5"></i><span class="text-[9px] font-medium">接單</span></button>
+            <button onclick="switchTab('stats')" id="tab-stats" class="flex flex-col items-center space-y-1 w-10 text-gray-400 hover:text-gray-600 transition-colors duration-300"><i class="fas fa-chart-pie text-xl mb-0.5"></i><span class="text-[9px] font-medium">帳務</span></button>
+            <button onclick="switchTab('menu')" id="tab-menu" class="flex flex-col items-center space-y-1 w-10 text-gray-400 hover:text-gray-600 transition-colors duration-300"><i class="fas fa-hamburger text-xl mb-0.5"></i><span class="text-[9px] font-medium">菜單</span></button>
+            <button onclick="switchTab('settings')" id="tab-settings" class="flex flex-col items-center space-y-1 w-10 text-gray-400 hover:text-gray-600 transition-colors duration-300"><i class="fas fa-cog text-xl mb-0.5"></i><span class="text-[9px] font-medium">設定</span></button>
+        </nav>
+    </div>
+
+    <!-- 菜單編輯 Modal (含圖片上傳) -->
+    <div id="edit-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-[2px] transition-opacity opacity-0" id="edit-backdrop" onclick="closeModal('edit')"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl transform translate-y-full transition-transform duration-300 ease-out max-w-md mx-auto max-h-[90vh] flex flex-col" id="edit-panel">
+            <div class="w-full flex justify-center pt-3 pb-1" onclick="closeModal('edit')"><div class="w-12 h-1.5 bg-gray-300 rounded-full"></div></div>
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center"><h3 class="text-xl font-bold text-gray-800" id="modal-title">編輯餐點</h3><button onclick="closeModal('edit')" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"><i class="fas fa-times"></i></button></div>
+            <div class="flex-1 overflow-y-auto p-6 space-y-5">
+                <input type="hidden" id="edit-id">
+                <div class="grid grid-cols-2 gap-4"><div class="space-y-1"><label class="text-xs font-bold text-gray-500 uppercase">分類</label><input type="text" id="edit-category" class="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all font-medium" placeholder="例如: 主食"></div><div class="space-y-1"><label class="text-xs font-bold text-gray-500 uppercase">價格</label><div class="relative"><span class="absolute left-3 top-3 text-gray-400">$</span><input type="number" id="edit-price" class="w-full pl-7 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all font-medium"></div></div></div>
+                <div class="space-y-1"><label class="text-xs font-bold text-gray-500 uppercase">餐點名稱</label><input type="text" id="edit-name" class="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all font-bold text-lg" placeholder="例如: 招牌雞排"></div>
+                <div class="space-y-1"><label class="text-xs font-bold text-gray-500 uppercase">描述</label><textarea id="edit-desc" rows="2" class="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all resize-none" placeholder="簡單介紹一下口感..."></textarea></div>
+                
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-gray-500 uppercase">圖片設定</label>
+                    <div class="flex space-x-2">
+                        <div class="flex-1 relative">
+                            <input type="text" id="edit-image" class="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-sm pr-24 truncate" placeholder="圖片網址..." oninput="previewImage(this.value)">
+                            <input type="file" id="upload-input" class="hidden" accept="image/*" onchange="handleImageUpload(this)">
+                            <button onclick="document.getElementById('upload-input').click()" class="absolute right-1 top-1 bottom-1 bg-white text-gray-600 px-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-xs font-bold flex items-center" id="upload-btn">
+                                <i class="fas fa-cloud-upload-alt mr-1"></i> 上傳
+                            </button>
+                        </div>
+                        <div class="w-12 h-12 bg-gray-100 rounded-xl flex-shrink-0 overflow-hidden border border-gray-200">
+                            <img id="preview-img" src="" class="w-full h-full object-cover hidden" onerror="this.style.display='none'">
+                            <div id="preview-icon" class="w-full h-full flex items-center justify-center text-gray-300"><i class="fas fa-image"></i></div>
+                        </div>
+                    </div>
+                    <button onclick="resetGithubToken()" class="text-[10px] text-gray-400 ml-1 hover:text-orange-500 underline cursor-pointer">* 圖片自動上傳 GitHub (點此重設金鑰)</button>
+                </div>
+
+                <label class="bg-gray-50 p-4 rounded-xl flex items-center justify-between cursor-pointer transition-colors hover:bg-gray-100">
+                    <span class="font-bold text-gray-700">上架供應中</span>
+                    <div class="relative inline-flex items-center">
+                        <input type="checkbox" id="edit-active" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                    </div>
+                </label>
+            </div>
+            <div class="p-6 border-t border-gray-100 flex space-x-3 bg-white pb-safe"><button onclick="deleteItem()" id="btn-delete" class="px-4 py-3 rounded-xl text-red-500 font-bold bg-red-50 hover:bg-red-100 transition-colors hidden"><i class="fas fa-trash-alt"></i></button><button onclick="saveMenu()" id="btn-save" class="flex-1 bg-gray-900 text-white py-3 rounded-xl font-bold shadow-lg btn-press transition-all">儲存變更</button></div>
+        </div>
+    </div>
+
+    <!-- 跑馬燈 Modal -->
+    <div id="marquee-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-[2px] transition-opacity opacity-0" id="marquee-backdrop" onclick="closeModal('marquee')"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl transform translate-y-full transition-transform duration-300 ease-out max-w-md mx-auto max-h-[90vh] flex flex-col" id="marquee-panel">
+            <div class="w-full flex justify-center pt-3 pb-1" onclick="closeModal('marquee')"><div class="w-12 h-1.5 bg-gray-300 rounded-full"></div></div>
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center"><h3 class="text-xl font-bold text-gray-800" id="marquee-title">跑馬燈設定</h3><button onclick="closeModal('marquee')" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"><i class="fas fa-times"></i></button></div>
+            <div class="flex-1 overflow-y-auto p-6 space-y-5">
+                <input type="hidden" id="mq-id">
+                <div class="space-y-1"><label class="text-xs font-bold text-gray-500 uppercase">公告內容</label><textarea id="mq-content" rows="3" class="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all resize-none" placeholder="例如: 今日雞排特價..."></textarea></div>
+                <div class="space-y-1"><label class="text-xs font-bold text-gray-500 uppercase">顯示權重 (數字大在前面)</label><input type="number" id="mq-weight" class="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all font-medium" placeholder="0"></div>
+                <label class="bg-gray-50 p-4 rounded-xl flex items-center justify-between cursor-pointer transition-colors hover:bg-gray-100"><span class="font-bold text-gray-700">啟用顯示</span><div class="relative inline-flex items-center"><input type="checkbox" id="mq-active" class="sr-only peer"><div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div></div></label>
+            </div>
+            <div class="p-6 border-t border-gray-100 flex space-x-3 bg-white pb-safe"><button onclick="deleteMarquee()" id="mq-btn-delete" class="px-4 py-3 rounded-xl text-red-500 font-bold bg-red-50 hover:bg-red-100 transition-colors hidden"><i class="fas fa-trash-alt"></i></button><button onclick="saveMarquee()" id="mq-btn-save" class="flex-1 bg-gray-900 text-white py-3 rounded-xl font-bold shadow-lg btn-press transition-all">儲存變更</button></div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] w-full max-w-xs space-y-2 pointer-events-none"></div>
+
+    <script>
+        // 全域變數
+        let currentPassword = "";
+
+        window.onload = function() {
+            const savedPwd = localStorage.getItem('admin_password');
+            const loginTime = localStorage.getItem('admin_login_time');
+            const now = new Date().getTime();
+            
+            initTimeSelectors(); // 初始化時間選單
+            
+            if (savedPwd && loginTime && (now - parseInt(loginTime) < SESSION_DURATION)) {
+                currentPassword = savedPwd;
+                document.getElementById('login-overlay').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                setDateFilter('today');
+            } else {
+                document.getElementById('login-overlay').classList.remove('hidden');
+            }
+        };
+
+        // 初始化時間下拉選單 (00-23)
+        function initTimeSelectors() {
+            const openSelect = document.getElementById('set-open-hour');
+            const closeSelect = document.getElementById('set-close-hour');
+            let html = '';
+            for(let i=0; i<24; i++) {
+                const val = i;
+                const txt = i < 10 ? `0${i}:00` : `${i}:00`;
+                html += `<option value="${val}">${txt}</option>`;
+            }
+            openSelect.innerHTML = html;
+            closeSelect.innerHTML = html;
+            // 預設值
+            openSelect.value = 10;
+            closeSelect.value = 23;
+        }
+
+        // ★★★ 登入邏輯 ★★★
+        async function tryLogin() {
+            const input = document.getElementById('password-input').value.trim();
+            if (!input) return showToast('請輸入密碼', 'error');
+            
+            localStorage.removeItem('admin_password');
+            localStorage.removeItem('admin_login_time');
+            currentPassword = "";
+
+            const btn = document.getElementById('login-btn');
+            const originalText = btn.innerText;
+            btn.innerText = '驗證中...';
+            btn.disabled = true;
+
+            try {
+                // 發送專屬的 check_login 動作
+                // 修正：加入 headers 和 redirect 防止跨域被擋
+                const res = await fetch(API_URL, {
+                    redirect: "follow",
+                    method: 'POST',
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify({ 
+                        password: input,
+                        action: 'check_login'
+                    })
+                });
+                
+                const json = await res.json();
+
+                if (json.status === 'success') {
+                    currentPassword = input;
+                    localStorage.setItem('admin_password', input);
+                    localStorage.setItem('admin_login_time', new Date().getTime());
+                    
+                    document.getElementById('login-overlay').classList.add('hidden');
+                    document.getElementById('main-app').classList.remove('hidden');
+                    setDateFilter('today');
+                    showToast('登入成功');
+                } else {
+                    showToast('密碼錯誤', 'error');
+                    document.getElementById('password-input').value = '';
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('連線失敗，請檢查網路', 'error');
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function checkLogin() { tryLogin(); }
+        
+        function logout() {
+            if(confirm('確定要登出嗎？')) {
+                localStorage.removeItem('admin_login_time');
+                localStorage.removeItem('admin_password');
+                currentPassword = "";
+                window.location.reload();
+            }
+        }
+        
+        // --- 共用工具 (Fetch 帶密碼) ---
+        async function fetchWithAuth(url, options = {}) {
+            if (options.method === 'POST') {
+                const body = JSON.parse(options.body);
+                body.password = currentPassword;
+                options.body = JSON.stringify(body);
+                // 修正：加入 headers 防止 CORS 問題
+                options.headers = { "Content-Type": "text/plain;charset=utf-8" };
+                options.redirect = "follow";
+                return fetch(url, options);
+            }
+            const separator = url.includes('?') ? '&' : '?';
+            return fetch(`${url}${separator}password=${currentPassword}`, options);
+        }
+        
+        function getLocalYYMMDD(date) { const year = date.getFullYear(), month = String(date.getMonth() + 1).padStart(2, '0'), day = String(date.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; }
+        function setDateFilter(type) { const dateInput = document.getElementById('date-filter'), now = new Date(); if (type === 'today') { dateInput.value = getLocalYYMMDD(now); } else if (type === 'yesterday') { const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1); dateInput.value = getLocalYYMMDD(yesterday); } fetchOrders(); }
+        
+        // 修正後的 showToast (原本少了一個括號)
+        function showToast(message, type = 'success') { 
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const icon = type === 'success' ? '<i class="fas fa-check-circle text-green-500"></i>' : '<i class="fas fa-exclamation-circle text-red-500"></i>'; 
+            toast.className = `bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg border border-gray-100 flex items-center space-x-3 transform -translate-y-10 opacity-0 transition-all duration-500`; 
+            toast.innerHTML = `${icon}<span class="font-medium text-sm">${message}</span>`; 
+            container.appendChild(toast); 
+            
+            // 修正處：補上 closing parenthesis
+            requestAnimationFrame(() => toast.classList.remove('-translate-y-10', 'opacity-0')); 
+            
+            setTimeout(() => { 
+                toast.classList.add('-translate-y-10', 'opacity-0'); 
+                setTimeout(() => toast.remove(), 500); 
+            }, 3000); 
+        }
+
+        function switchTab(tab) {
+            ['page-orders', 'page-menu', 'page-settings', 'page-stats', 'page-marquee'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+            ['tab-orders', 'tab-menu', 'tab-settings', 'tab-stats', 'tab-marquee'].forEach(id => { 
+                document.getElementById(id)?.classList.remove('text-orange-500'); 
+                document.getElementById(id)?.classList.add('text-gray-400'); 
+            });
+            document.getElementById(`page-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('text-orange-500');
+            document.getElementById(`tab-${tab}`).classList.remove('text-gray-400');
+            
+            if(tab === 'orders') fetchOrders(); 
+            else if(tab === 'menu') fetchMenu(); 
+            else if(tab === 'settings') fetchSettings();
+            else if(tab === 'stats') fetchStats();
+            else if(tab === 'marquee') fetchMarquees();
+        }
+
+        // --- 圖片上傳 (已優化預覽) ---
+        function resetGithubToken() { localStorage.removeItem('github_token'); alert('GitHub 金鑰已重置，下次上傳時請重新輸入。'); }
+        async function handleImageUpload(input) {
+            const file = input.files[0]; if (!file) return;
+            const maxSize = 2 * 1024 * 1024; if (file.size > maxSize) { showToast('圖片過大！', 'error'); input.value = ''; return; }
+            let token = localStorage.getItem('github_token'); if (!token) { token = prompt("GitHub Token:"); if (!token) { alert("需輸入 Token"); input.value = ''; return; } localStorage.setItem('github_token', token); }
+            const btn = document.getElementById('upload-btn'); const originalText = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
+            try { 
+                const reader = new FileReader(); 
+                reader.onload = async function(e) { 
+                    const content = e.target.result.split(',')[1]; 
+                    const filename = 'img_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9.]/g, ''); 
+                    const res = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/contents/images/${filename}`, { method: 'PUT', headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `Upload ${filename}`, content: content }) }); 
+                    if (res.ok) { 
+                        const url = `https://${GITHUB_USERNAME}.github.io/${REPO_NAME}/images/${filename}`; 
+                        document.getElementById('edit-image').value = url; 
+                        // 這裡使用 base64 預覽，解決 GitHub Pages 延遲問題
+                        previewImage(e.target.result); 
+                        showToast('上傳成功 (圖片網址約1-3分鐘後生效)'); 
+                    } else { 
+                        const err = await res.json(); 
+                        if (res.status === 401) { localStorage.removeItem('github_token'); alert("Token 無效"); } 
+                        else throw new Error(err.message); 
+                    } 
+                    btn.innerHTML = originalText; btn.disabled = false; input.value = ''; 
+                }; 
+                reader.readAsDataURL(file); 
+            } catch (e) { showToast('上傳失敗', 'error'); btn.innerHTML = originalText; btn.disabled = false; }
+        }
+        function previewImage(url) { const img = document.getElementById('preview-img'), icon = document.getElementById('preview-icon'); if(url) { img.src = url; img.classList.remove('hidden'); icon.classList.add('hidden'); } else { img.classList.add('hidden'); icon.classList.remove('hidden'); } }
+
+        // --- 訂單管理 ---
+        async function fetchOrders() {
+            const container = document.getElementById('orders-list');
+            const dateVal = document.getElementById('date-filter').value;
+            const showHistory = document.getElementById('show-history').checked;
+            container.innerHTML = '<div class="text-center py-20 text-gray-400"><div class="loader mx-auto mb-2"></div>讀取中...</div>';
+            try { 
+                const res = await fetchWithAuth(`${API_URL}?type=admin_orders&date=${dateVal}&history=${showHistory}`);
+                const json = await res.json(); 
+                if(json.status === 'error' && json.message.includes('密碼')) { showToast('登入逾時', 'error'); logout(); return; }
+                container.innerHTML = ''; 
+                if(json.status === 'success') { 
+                    if(json.data.length === 0) { container.innerHTML = `<div class="flex flex-col items-center justify-center py-20 text-gray-300"><i class="fas fa-clipboard-check text-5xl mb-4 opacity-30"></i><p>該日期沒有訂單</p></div>`; return; }
+                    json.data.forEach(order => {
+                        const status = order.status; const isFinished = status === 'finished' || status === 'cancelled'; const dateStr = order.timestamp || order.time; const date = new Date(dateStr); const hh = String(date.getHours()).padStart(2,'0'), mm = String(date.getMinutes()).padStart(2,'0'), timeStr = isNaN(date) ? '--:--' : `${hh}:${mm}`;
+                        let statusBadge = '', btnHtml = '', cardStyle = '';
+                        if (status === 'pending') { statusBadge = `<span class="bg-red-100 text-red-700 text-xs font-bold px-2.5 py-1 rounded-lg">訂單成立</span>`; btnHtml = `<button onclick="updateStatus('${order.orderId}', 'confirmed')" class="bg-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md btn-press w-full mb-2">確認訂單</button>`; }
+                        else if (status === 'confirmed') { statusBadge = `<span class="bg-orange-100 text-orange-700 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center animate-pulse"><i class="fas fa-fire mr-1"></i>備餐中</span>`; btnHtml = `<button onclick="updateStatus('${order.orderId}', 'done')" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md btn-press w-full mb-2">餐點完成</button>`; }
+                        else if (status === 'done') { statusBadge = `<span class="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-lg">待取餐</span>`; btnHtml = `<button onclick="updateStatus('${order.orderId}', 'finished')" class="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md btn-press w-full mb-2">取餐完成</button>`; }
+                        else if (status === 'finished') { statusBadge = `<span class="bg-gray-100 text-gray-600 text-xs font-bold px-2.5 py-1 rounded-lg">已結單</span>`; cardStyle = 'opacity-50 grayscale'; }
+                        else if (status === 'cancelled') { statusBadge = `<span class="bg-red-100 text-red-600 text-xs font-bold px-2.5 py-1 rounded-lg">已取消</span>`; cardStyle = 'opacity-50 grayscale'; }
+                        let cancelBtn = !isFinished ? `<button onclick="cancelOrder('${order.orderId}', this)" class="text-xs text-red-400 font-medium underline mt-3 block text-center w-full hover:text-red-600">取消訂單</button>` : '';
+                        let phoneHtml = order.phone && order.phone !== '未填寫' ? `<a href="tel:${order.phone}" class="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center hover:bg-green-100 transition-colors mr-2 ml-auto"><i class="fas fa-phone"></i></a>` : '';
+                        container.innerHTML += `<div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 ${cardStyle} transition-all"><div class="flex justify-between items-start mb-3"><div class="flex flex-col"><div class="flex items-center space-x-2"><span class="text-lg font-bold text-gray-800">${order.customerName}</span><span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">${timeStr}</span></div><span class="text-xs text-gray-400 font-mono mt-0.5">${order.orderId.slice(-4)}</span></div>${statusBadge}</div><div class="py-3 border-t border-dashed border-gray-200 space-y-1"><p class="text-gray-700 font-medium text-sm leading-relaxed whitespace-pre-line">${order.items.replace(/, /g, '\n')}</p></div>${order.note ? `<div class="text-xs text-orange-600 bg-orange-50 p-2 rounded-lg mb-3 font-medium"><i class="fas fa-comment-alt mr-1"></i>${order.note}</div>` : ''}<div class="flex justify-between items-center pt-2 mt-2 border-t border-gray-100 mb-4"><div class="flex flex-col"><span class="text-xs text-gray-400">總金額</span><span class="text-xl font-bold text-gray-900">$${order.totalAmount}</span></div>${phoneHtml}</div>${btnHtml}${cancelBtn}</div>`;
+                    });
+                }
+            } catch(e) { showToast('讀取失敗', 'error'); }
+        }
+
+        function updateStatus(orderId, status) { const btn = event.target; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>'; btn.disabled = true; fetchWithAuth(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_order_status', orderId: orderId, status: status }) }).then(res => res.json()).then(json => { if(json.status === 'success') { showToast('狀態已更新'); fetchOrders(); } }); }
+        function cancelOrder(orderId, btn) { if(!confirm('確定要取消這筆訂單嗎？')) return; if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> 取消中...'; btn.classList.add('text-gray-400', 'cursor-not-allowed'); btn.classList.remove('text-red-400', 'hover:text-red-600', 'underline'); } fetchWithAuth(API_URL, { method: 'POST', body: JSON.stringify({ action: 'cancel_order', orderId: orderId, role: 'admin' }) }).then(res => res.json()).then(json => { if(json.status === 'success') { showToast('訂單已取消'); fetchOrders(); } else { showToast(json.message, 'error'); if(btn) { btn.disabled = false; btn.innerHTML = '取消訂單'; btn.classList.remove('text-gray-400', 'cursor-not-allowed'); btn.classList.add('text-red-400', 'hover:text-red-600', 'underline'); } } }); }
+
+        // --- 菜單管理 ---
+        async function fetchMenu() { const container = document.getElementById('menu-list'); try { const res = await fetchWithAuth(API_URL); const json = await res.json(); container.innerHTML = ''; if(json.status === 'success') { json.data.menu.forEach(item => { const isAvail = (item.available === true || item.available === "TRUE"), opacity = isAvail ? '' : 'opacity-60 grayscale', statusDot = isAvail ? 'bg-green-500' : 'bg-gray-300', imgHtml = item.image ? `<img src="${item.image}" class="w-12 h-12 object-cover rounded-lg border border-gray-100 mr-3" onerror="this.style.display='none'">` : `<div class="w-12 h-12 bg-gray-100 rounded-lg border border-gray-100 flex items-center justify-center text-gray-300 mr-3"><i class="fas fa-utensils"></i></div>`; container.innerHTML += `<div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center ${opacity} transition-all btn-press" onclick='openEditModal("edit", ${JSON.stringify(item)})'><div class="flex items-center space-x-3 overflow-hidden"><div class="w-2 h-2 rounded-full ${statusDot} flex-shrink-0 self-center"></div>${imgHtml}<div class="flex flex-col overflow-hidden"><span class="text-xs text-gray-400 mb-0.5">${item.category}</span><span class="font-bold text-gray-800 text-lg truncate">${item.name}</span><span class="text-orange-500 font-bold">$${item.price}</span></div></div><div class="w-8 h-8 bg-gray-50 rounded-full flex items-center justify-center text-gray-400"><i class="fas fa-chevron-right text-xs"></i></div></div>`; }); } } catch(e) { showToast('讀取失敗', 'error'); } }
+        function openEditModal(mode, item = null) { const modal = document.getElementById('edit-modal'), backdrop = document.getElementById('edit-backdrop'), panel = document.getElementById('edit-panel'), title = document.getElementById('modal-title'), btnDel = document.getElementById('btn-delete'), imgInput = document.getElementById('edit-image'), previewImg = document.getElementById('preview-img'), previewIcon = document.getElementById('preview-icon'); imgInput.oninput = function() { if(this.value) { previewImg.src = this.value; previewImg.classList.remove('hidden'); previewIcon.classList.add('hidden'); } else { previewImg.classList.add('hidden'); previewIcon.classList.remove('hidden'); } }; document.body.classList.add('body-lock'); modal.classList.remove('hidden'); requestAnimationFrame(() => { backdrop.classList.remove('opacity-0'); panel.classList.remove('translate-y-full'); }); if(mode === 'add') { title.innerText = '新增餐點'; btnDel.classList.add('hidden'); document.getElementById('edit-id').value = ''; document.getElementById('edit-category').value = ''; document.getElementById('edit-name').value = ''; document.getElementById('edit-price').value = ''; document.getElementById('edit-desc').value = ''; imgInput.value = ''; document.getElementById('edit-active').checked = true; previewImg.classList.add('hidden'); previewIcon.classList.remove('hidden'); } else { title.innerText = '編輯餐點'; btnDel.classList.remove('hidden'); document.getElementById('edit-id').value = item.id; document.getElementById('edit-category').value = item.category; document.getElementById('edit-name').value = item.name; document.getElementById('edit-price').value = item.price; document.getElementById('edit-desc').value = item.description; imgInput.value = item.image || ''; document.getElementById('edit-active').checked = (item.available === true || item.available === "TRUE"); imgInput.oninput(); } }
+        function closeModal(type) { const modal = document.getElementById(type + '-modal'), backdrop = document.getElementById(type + '-backdrop'), panel = document.getElementById(type + '-panel'); document.body.classList.remove('body-lock'); backdrop.classList.add('opacity-0'); panel.classList.add('translate-y-full'); setTimeout(() => modal.classList.add('hidden'), 300); }
+        function saveMenu() { const id = document.getElementById('edit-id').value; const method = id ? 'edit' : 'add'; const itemData = { id: id, category: document.getElementById('edit-category').value, name: document.getElementById('edit-name').value, price: document.getElementById('edit-price').value, description: document.getElementById('edit-desc').value, image: document.getElementById('edit-image').value, available: document.getElementById('edit-active').checked ? 'TRUE' : 'FALSE' }; const btn = document.getElementById('btn-save'); const originalText = btn.innerText; btn.innerText = '處理中...'; btn.disabled = true; fetchWithAuth(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_menu', method: method, item: itemData }) }).then(res => res.json()).then(json => { btn.innerText = originalText; btn.disabled = false; if(json.status === 'success') { showToast(method === 'add' ? '新增成功' : '更新成功'); closeModal('edit'); fetchMenu(); } else showToast('失敗: ' + json.message, 'error'); }); }
+        function deleteItem() { if(!confirm('確定要刪除這個餐點嗎？')) return; const id = document.getElementById('edit-id').value; fetchWithAuth(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_menu', method: 'delete', item: { id: id } }) }).then(res => res.json()).then(json => { if(json.status === 'success') { showToast('已刪除餐點', 'error'); closeModal('edit'); fetchMenu(); } }); }
+
+        // 跑馬燈管理
+        async function fetchMarquees() { const container = document.getElementById('marquee-list'); try { const res = await fetchWithAuth(`${API_URL}?type=admin_marquees`); const json = await res.json(); container.innerHTML = ''; if(json.status === 'success') { json.data.forEach(mq => { const isActive = (mq.active === true || mq.active === "TRUE"), opacity = isActive ? '' : 'opacity-60 grayscale', statusDot = isActive ? 'bg-green-500' : 'bg-gray-300'; container.innerHTML += `<div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center ${opacity} transition-all btn-press" onclick='openMarqueeModal("edit", ${JSON.stringify(mq)})'><div class="flex items-center space-x-4 overflow-hidden flex-1"><div class="w-2 h-2 rounded-full ${statusDot} flex-shrink-0"></div><div class="flex flex-col overflow-hidden flex-1"><span class="font-bold text-gray-800 truncate">${mq.content}</span><span class="text-xs text-gray-400">權重: ${mq.weight || 0}</span></div></div><div class="w-8 h-8 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 ml-2"><i class="fas fa-pen text-xs"></i></div></div>`; }); } } catch(e) { showToast('讀取失敗', 'error'); } }
+        function openMarqueeModal(mode, item = null) { const modal = document.getElementById('marquee-modal'), backdrop = document.getElementById('marquee-backdrop'), panel = document.getElementById('marquee-panel'), title = document.getElementById('marquee-title'), btnDel = document.getElementById('mq-btn-delete'); document.body.classList.add('body-lock'); modal.classList.remove('hidden'); requestAnimationFrame(() => { backdrop.classList.remove('opacity-0'); panel.classList.remove('translate-y-full'); }); if(mode === 'add') { title.innerText = '新增跑馬燈'; btnDel.classList.add('hidden'); document.getElementById('mq-id').value = ''; document.getElementById('mq-content').value = ''; document.getElementById('mq-weight').value = '0'; document.getElementById('mq-active').checked = true; } else { title.innerText = '編輯跑馬燈'; btnDel.classList.remove('hidden'); document.getElementById('mq-id').value = item.id; document.getElementById('mq-content').value = item.content; document.getElementById('mq-weight').value = item.weight || 0; document.getElementById('mq-active').checked = (item.active === true || item.active === "TRUE"); } }
+        function saveMarquee() { const id = document.getElementById('mq-id').value; const method = id ? 'edit' : 'add'; const itemData = { id: id, content: document.getElementById('mq-content').value, weight: document.getElementById('mq-weight').value, active: document.getElementById('mq-active').checked ? 'TRUE' : 'FALSE' }; const btn = document.getElementById('mq-btn-save'); const originalText = btn.innerText; btn.innerText = '處理中...'; btn.disabled = true; fetchWithAuth(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_marquee', method: method, item: itemData }) }).then(res => res.json()).then(json => { btn.innerText = originalText; btn.disabled = false; if(json.status === 'success') { showToast(method === 'add' ? '新增成功' : '更新成功'); closeModal('marquee'); fetchMarquees(); } else showToast('失敗: ' + json.message, 'error'); }); }
+        function deleteMarquee() { if(!confirm('確定要刪除此跑馬燈？')) return; const id = document.getElementById('mq-id').value; fetchWithAuth(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_marquee', method: 'delete', item: { id: id } }) }).then(res => res.json()).then(json => { if(json.status === 'success') { showToast('已刪除', 'error'); closeModal('marquee'); fetchMarquees(); } }); }
+
+        // ★★★ 帳務統計 ★★★
+        async function fetchStats() {
+            try {
+                const res = await fetchWithAuth(`${API_URL}?type=admin_stats`);
+                const json = await res.json();
+                if(json.status === 'success') {
+                    const d = json.data;
+                    document.getElementById('stat-today').innerText = '$' + d.today.toLocaleString();
+                    document.getElementById('stat-yesterday').innerText = '$' + d.yesterday.toLocaleString();
+                    document.getElementById('stat-thisWeek').innerText = '$' + d.thisWeek.toLocaleString();
+                    document.getElementById('stat-lastWeek').innerText = '$' + d.lastWeek.toLocaleString();
+                    document.getElementById('stat-thisMonth').innerText = '$' + d.thisMonth.toLocaleString();
+                    document.getElementById('stat-lastMonth').innerText = '$' + d.lastMonth.toLocaleString();
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function fetchCustomStats() {
+            const s = document.getElementById('stat-start').value;
+            const e = document.getElementById('stat-end').value;
+            const display = document.getElementById('stat-custom');
+            
+            if(!s || !e) return showToast('請選擇開始與結束日期', 'error');
+            
+            display.innerText = '...';
+            
+            try {
+                const res = await fetchWithAuth(`${API_URL}?type=admin_stats&startDate=${s}&endDate=${e}`);
+                const json = await res.json();
+                if(json.status === 'success') {
+                    display.innerText = '$' + json.data.custom.toLocaleString();
+                }
+            } catch(err) { display.innerText = '錯誤'; }
+        }
+
+        // ★★★ 設定管理 (營業時間) ★★★
+        async function fetchSettings() {
+            fetchMarquees(); // 同時載入跑馬燈
+            try {
+                const res = await fetchWithAuth(`${API_URL}?type=admin_settings`);
+                const json = await res.json();
+                if (json.status === 'success') {
+                    const settings = json.data;
+                    const open = settings.find(s => s.key === 'open_hour');
+                    const close = settings.find(s => s.key === 'close_hour');
+                    if (open) document.getElementById('set-open-hour').value = open.value;
+                    if (close) document.getElementById('set-close-hour').value = close.value;
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function saveTimeSettings() {
+            const open = document.getElementById('set-open-hour').value;
+            const close = document.getElementById('set-close-hour').value;
+            const btn = document.getElementById('btn-save-time');
+            btn.innerText = "儲存中..."; btn.disabled = true;
+            
+            const items = [
+                { key: 'open_hour', value: open },
+                { key: 'close_hour', value: close }
+            ];
+
+            try {
+                const res = await fetchWithAuth(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'update_settings', items: items })
+                });
+                const json = await res.json();
+                if (json.status === 'success') showToast('營業時間已更新');
+                else showToast('更新失敗', 'error');
+            } catch (e) { showToast('連線錯誤', 'error'); }
+            finally { btn.innerText = "儲存時間設定"; btn.disabled = false; }
+        }
+    </script>
+</body>
+</html>
